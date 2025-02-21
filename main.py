@@ -5,10 +5,17 @@ nnfs.init()
 # Dense layer
 class Layer_Dense:
     # Layer initialization
-    def __init__(self, n_inputs, n_neurons):
+    def __init__(self, n_inputs, n_neurons,
+                 weight_regularizer_l1=0, weight_regularizer_l2=0,
+                 bias_regularizer_l1=0, bias_regularizer_l2=0):
         # Initialize weights and biases
         self.weights = 0.01 * np.random.randn(n_inputs, n_neurons)
         self.biases = np.zeros((1, n_neurons))
+        #Set regulariztion strngth
+        self.weight_regularizer_l1 = weight_regularizer_l1
+        self.weight_regularizer_l2 = weight_regularizer_l2
+        self.bias_regularizer_l1 = bias_regularizer_l1
+        self.bias_regularizer_l2 = bias_regularizer_l2
     # Forward pass
     def forward(self, inputs):
         # Remember input values
@@ -20,6 +27,24 @@ class Layer_Dense:
         # Gradients on parameters
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
+
+        # Gradients on regularization
+        # L1 on weights
+        if self.weight_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.weights)
+            dL1[self.weights < 0] = -1
+        # L2 on weights
+        if self.weight_regularizer_l2 > 0:
+            self.weights += 2 * self.weight_regularizer_l2 * self.weights
+        # L1 on biases
+        if self.bias_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.biases)
+            dL1[self.biases < 0] = -1
+            self.biases += self.bias_regularizer_l1 * dL1
+        # L2 on biases
+        if self.bias_regularizer_l2 > 0:
+            self.biases += 2 * self.bias_regularizer_l2 * self.biases
+
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
 # ReLU activation
@@ -336,10 +361,12 @@ class Activation_Softmax_Loss_CategoricalCrossentropy():
         self.dinputs[range(samples), y_true] -= 1
         # Normalize gradient
         self.dinputs = self.dinputs / samples
+#  main---------------------------------------------------------------
     # Create dataset
 X, y = spiral_data(samples=100, classes=3)
 # Create Dense layer with 2 input features and 64 output values
-dense1 = Layer_Dense(2, 64)
+dense1 = Layer_Dense(2, 64, weight_regularizer_l2=5e-4,
+                                            bias_regularizer_l2=5e-4)
 # Create ReLU activation (to be used with Dense layer):
 activation1 = Activation_ReLU()
 # Create second Dense layer with 64 input features (as we take output
@@ -383,3 +410,33 @@ for epoch in range(10001):
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
     optimizer.post_update_params()
+
+# Validate the model
+
+# Create test dataset
+X_test, y_test = spiral_data(samples=100, classes=3)
+
+#Perform a forward pass of our testing data through this layer
+dense1.forward(X_test)
+
+
+# Perform a forward pass through activation function
+# takes the outputs of activation function of first layer as inputs
+activation1.forward(dense1.output)
+
+# Perform a forward pass through Dense layer
+# takes outputs of activation function of first layer as inputs
+dense2.forward(activation1.output)
+
+# Perform a forward pass through the activation/loss function
+# takes the output of second dense layer here and returns loss
+loss = loss_activation.forward(dense2.output, y_test)
+
+# Calculate accuracy from output of activation2 and targets
+# calculate values along first axis
+predictions = np.argmax(loss_activation.output, axis=1)
+if len(y_test.shape) == 2:
+    y_test = np.argmax(y_test, axis=1)
+accuracy = np.mean(predictions==y_test)
+
+print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
